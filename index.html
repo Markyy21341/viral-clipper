@@ -28,7 +28,7 @@ select,input[type=range]{font-size:15px}input[type=range]{flex:1}
 <h1>✂️ Viral Clipper</h1>
 <p>Free and private: everything runs on your phone. Finds the loudest, most exciting moments and exports 9:16 clips.</p>
 <label class="pick">Choose a video<input id="f" type="file" accept="video/*"></label>
-<label class="row" style="margin:8px 0"><input id="mot" type="checkbox" checked> Also detect motion and scene cuts (slower, better picks)</label>
+<label class="row" style="margin:8px 0"><input id="mot" type="checkbox"> Also detect motion and scene cuts (experimental, slower)</label>
 <details class="card"><summary>Have a Twitch or YouTube link?</summary><p>Links can’t be clipped directly, because those sites block browsers from downloading their video. Save the video to your phone first, then choose it above. If it’s your own, use Download in Twitch Video Producer or YouTube Studio.</p></details>
 <div id="msg"></div>
 <video id="v" playsinline controls hidden></video>
@@ -39,7 +39,7 @@ select,input[type=range]{font-size:15px}input[type=range]{flex:1}
  <div class="row" style="margin-top:8px"><span>Crop position</span><input id="pan" type="range" min="0" max="1" step="0.01" value="0.5"></div>
  <div class="row" style="margin-top:8px"><span>Caption style</span><select id="cs"><option value="karaoke">Karaoke highlight</option><option value="outline">Bold outline</option><option value="pop">Yellow pop</option><option value="box">Boxed</option><option value="neon">Neon</option></select></div>
  <div class="row" style="margin-top:8px"><span>Words per caption</span><select id="cn"><option>1</option><option>2</option><option selected>3</option><option>4</option></select></div>
- <div class="row" style="margin-top:8px"><span>Subtitles</span><select id="sub"><option value="1">On</option><option value="0">Off</option></select><label class="row"><input id="auto" type="checkbox" checked> Auto-transcribe if empty</label></div>
+ <div class="row" style="margin-top:8px"><span>Subtitles</span><select id="sub"><option value="1">On</option><option value="0">Off</option></select><label class="row"><input id="auto" type="checkbox"> Auto-transcribe if empty</label></div>
  <div class="row" style="margin-top:8px"><span>Speech language</span><select id="wm"><option value="Xenova/whisper-tiny.en">English (faster)</option><option value="Xenova/whisper-tiny">Other / auto-detect</option></select></div>
 </div>
 <button id="gen" hidden style="width:100%;font-size:17px;padding:14px">✨ Generate viral short</button>
@@ -55,7 +55,7 @@ const fm=t=>Math.floor(t/60)+':'+String(Math.floor(t%60)).padStart(2,'0');
 function initAudio(){
  if(ctx)return;ctx=new(window.AudioContext||window.webkitAudioContext)();
  const s=srcN=ctx.createMediaElementSource(v);dest=ctx.createMediaStreamDestination();an=ctx.createAnalyser();an.fftSize=2048;
- const mute=muteN=ctx.createGain();mute.gain.value=0;s.connect(dest);s.connect(an);an.connect(mute);mute.connect(ctx.destination);
+ const mute=muteN=ctx.createGain();mute.gain.value=0;s.connect(dest);s.connect(an);s.connect(ctx.destination);an.connect(mute);mute.connect(ctx.destination);
 }
 $('#f').onchange=async e=>{
  const f=e.target.files[0];if(!f)return;
@@ -123,11 +123,11 @@ function seekTo(t,ms=2500){return new Promise(r=>{let d=false;const f=()=>{if(!d
 async function motion(){
  try{
   if(v.readyState<1)await new Promise(r=>v.onloadedmetadata=r);
-  dur=dur||v.duration;const step=Math.max(3,dur/300),c=document.createElement('canvas');c.width=32;c.height=18;
+  dur=dur||v.duration;const step=Math.max(4,dur/150),c=document.createElement('canvas');c.width=32;c.height=18;
   const x=c.getContext('2d',{willReadFrequently:true}),out=[],T0=Date.now();let prev=null,fails=0;v.pause();
   if(v.readyState<2)await Promise.race([new Promise(r=>v.addEventListener('loadeddata',r,{once:true})),new Promise(r=>setTimeout(r,4000))]);
   for(let t=step;t<dur-1;t+=step){
-   if(Date.now()-T0>180000){say('Motion check took too long. Using audio only.');v.currentTime=0;return []}
+   if(Date.now()-T0>90000){say('Motion check took too long. Using audio only.');v.currentTime=0;return []}
    if(!await seekTo(t)){if(++fails>=3){say('Motion check isn’t available for this video. Using audio only.');v.currentTime=0;return []}continue}
    fails=0;x.drawImage(v,0,0,32,18);const d=x.getImageData(0,0,32,18).data;
    if(prev){let s=0;for(let k=0;k<d.length;k++)if(k%4<3)s+=Math.abs(d[k]-prev[k]);out.push({t,m:s/(d.length*.75)})}
@@ -186,6 +186,7 @@ async function loadAsr(){
 }
 async function autoCap(c){
  if(busy){say('Still working on another task. Wait, then try again.');return false}
+ try{initAudio();ctx.resume()}catch(e){}
  busy=true;wake(true);
  try{
   const audio=await clipAudio(c),a=await loadAsr();say('Transcribing… this can take a minute.');
@@ -224,6 +225,7 @@ function addResult(b,label){
 }
 async function exp(c,label,tag){
  if(busy){say('Still working on the last clip. Wait a moment, then try again.');return false}
+ try{initAudio();ctx.resume()}catch(e){}
  if($('#sub').value==='1'&&$('#auto').checked&&!(c.cap||'').trim())await autoCap(c);
  busy=true;wake(true);
  try{return await Promise.race([exp0(c,label,tag),new Promise((_,rej)=>setTimeout(()=>rej(new Error('took too long')),(c.end-c.start+25)*1000))])}
@@ -233,7 +235,7 @@ async function exp(c,label,tag){
 async function exp0(c,label,tag){
 
  if(!window.MediaRecorder){say('This browser can’t export clips. Try Chrome on Android or a recent Safari.');return false}
- v.ontimeupdate=null;initAudio();await Promise.race([ctx.resume(),new Promise(r=>setTimeout(r,1500))]);v.muted=false;v.playbackRate=1;
+ v.ontimeupdate=null;initAudio();await Promise.race([ctx.resume(),new Promise(r=>setTimeout(r,1500))]);if(ctx.state!=='running')throw new Error('audio is paused, tap Export again');v.muted=false;v.playbackRate=1;
  const W=720,H=1280,cv=$('#cv');cv.width=W;cv.height=H;const g=cv.getContext('2d');
  const sm=document.createElement('canvas');sm.width=36;sm.height=64;const sg=sm.getContext('2d');
  const st=cv.captureStream(30);dest.stream.getAudioTracks().forEach(t=>st.addTrack(t));
