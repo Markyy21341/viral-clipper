@@ -59,20 +59,38 @@ function initAudio(){
 }
 $('#f').onchange=async e=>{
  const f=e.target.files[0];if(!f)return;
- url&&URL.revokeObjectURL(url);url=URL.createObjectURL(f);v.src=url;v.hidden=false;
+ url&&URL.revokeObjectURL(url);url=URL.createObjectURL(f);v.preload='auto';v.src=url;v.hidden=false;
  busy=false;AB=null;$('#list').innerHTML='';$('#out').innerHTML='';$('#gen').hidden=true;say('Analyzing audio… long videos can take a while.');
  wake(true);try{const en=await getEnergy(f),mo=$('#mot').checked?await motion():[];score(en,mo);$('#opts').hidden=false;$('#gen').hidden=false;pick();say('');wake(false)}
  catch(x){say('Couldn’t analyze this video. Try a different file or a shorter one.');wake(false)}
 };
 async function getEnergy(f){
  if(f.size<120e6){try{return await decode(f)}catch(x){}}
- say('Big file: scanning at 4× speed. Keep this screen open.');return scan();
+ say('Big file: scanning audio at 4× speed. Keep this screen open.');try{return await scanAudio()}catch(x){say('Switching to the slower scan…');return scan()}
 }
 async function decode(f){
  const ac=new(window.AudioContext||window.webkitAudioContext)();
  const a=await ac.decodeAudioData(await f.arrayBuffer());ac.close();
  AB=a;dur=a.duration;const d=a.getChannelData(0),w=Math.floor(a.sampleRate*.5),n=Math.floor(d.length/w),e=[];
  for(let i=0;i<n;i++){let s=0,c=0;for(let j=i*w;j<(i+1)*w;j+=8){s+=d[j]*d[j];c++}e.push(Math.sqrt(s/c))}
+ return e;
+}
+async function scanAudio(){
+ initAudio();await ctx.resume();
+ const au=new Audio();au.preload='auto';au.src=url;
+ await new Promise((r,j)=>{au.onloadedmetadata=r;au.onerror=()=>j(new Error('audio'));setTimeout(()=>j(new Error('audio timeout')),10000)});
+ dur=au.duration;if(!isFinite(dur))throw new Error('no duration');
+ const s2=ctx.createMediaElementSource(au),a2=ctx.createAnalyser(),m2=ctx.createGain();a2.fftSize=2048;m2.gain.value=0;s2.connect(a2);a2.connect(m2);m2.connect(ctx.destination);
+ const e=[],buf=new Float32Array(a2.fftSize);let last=0,s=0,c=0,lt=-1,ls=Date.now();const t0=Date.now();
+ au.playbackRate=4;await au.play();
+ try{await new Promise((res,rej)=>{const t=setInterval(()=>{
+  if(au.ended||au.currentTime>=dur-.3){clearInterval(t);res();return}
+  if(au.paused)au.play().catch(()=>{});
+  if(au.currentTime!==lt){lt=au.currentTime;ls=Date.now()}else if(Date.now()-ls>20000){clearInterval(t);rej(new Error('stalled'));return}
+  a2.getFloatTimeDomainData(buf);let q=0;for(let k=0;k<buf.length;k++)q+=buf[k]*buf[k];s+=Math.sqrt(q/buf.length);c++;
+  const i=Math.floor(au.currentTime/.5);
+  if(i>last){const m=s/c;for(let j=last;j<i;j++)e[j]=m;last=i;s=0;c=0;const p=au.currentTime/dur,left=Math.round((Date.now()-t0)/1000*(1-p)/Math.max(p,.001)/60);say('Scanning audio… '+Math.round(p*100)+'% (about '+left+' min left). Keep this screen open.')}
+ },50)})}finally{au.pause();au.removeAttribute('src');au.load()}
  return e;
 }
 async function scan(){
@@ -101,17 +119,22 @@ function drawText(g,W,ws,act,st,y,size){
    if(st.s){g.strokeStyle=st.s;g.lineWidth=st.lw;g.strokeText(o.w,x,yy)}
    g.fillStyle=(st.hl&&o.i===act)?st.hl:st.f;g.fillText(o.w,x,yy);g.restore();x+=o.m+sp});yy+=lh});
 }
+function seekTo(t,ms=2500){return new Promise(r=>{let d=false;const f=()=>{if(!d){d=true;v.removeEventListener('seeked',f);clearTimeout(to);r(true)}},to=setTimeout(()=>{if(!d){d=true;v.removeEventListener('seeked',f);r(false)}},ms);v.addEventListener('seeked',f);v.currentTime=t})}
 async function motion(){
- if(v.readyState<1)await new Promise(r=>v.onloadedmetadata=r);
- dur=dur||v.duration;const step=Math.max(2,dur/500),c=document.createElement('canvas');c.width=32;c.height=18;
- const x=c.getContext('2d',{willReadFrequently:true}),out=[];let prev=null;v.pause();
- for(let t=0;t<dur-1;t+=step){
-  if(Math.abs(v.currentTime-t)>.02){v.currentTime=t;await new Promise(r=>v.onseeked=r)}
-  x.drawImage(v,0,0,32,18);const d=x.getImageData(0,0,32,18).data;
-  if(prev){let s=0;for(let k=0;k<d.length;k++)if(k%4<3)s+=Math.abs(d[k]-prev[k]);out.push({t,m:s/(d.length*.75)})}
-  prev=d;say('Checking motion… '+Math.round(t/dur*100)+'%');
- }
- v.currentTime=0;out.step=step;return out;
+ try{
+  if(v.readyState<1)await new Promise(r=>v.onloadedmetadata=r);
+  dur=dur||v.duration;const step=Math.max(3,dur/300),c=document.createElement('canvas');c.width=32;c.height=18;
+  const x=c.getContext('2d',{willReadFrequently:true}),out=[],T0=Date.now();let prev=null,fails=0;v.pause();
+  if(v.readyState<2)await Promise.race([new Promise(r=>v.addEventListener('loadeddata',r,{once:true})),new Promise(r=>setTimeout(r,4000))]);
+  for(let t=step;t<dur-1;t+=step){
+   if(Date.now()-T0>180000){say('Motion check took too long. Using audio only.');v.currentTime=0;return []}
+   if(!await seekTo(t)){if(++fails>=3){say('Motion check isn’t available for this video. Using audio only.');v.currentTime=0;return []}continue}
+   fails=0;x.drawImage(v,0,0,32,18);const d=x.getImageData(0,0,32,18).data;
+   if(prev){let s=0;for(let k=0;k<d.length;k++)if(k%4<3)s+=Math.abs(d[k]-prev[k]);out.push({t,m:s/(d.length*.75)})}
+   prev=d;say('Checking motion… '+Math.round(t/dur*100)+'%');
+  }
+  v.currentTime=0;out.step=step;return out;
+ }catch(e){return []}
 }
 function score(e,mo=[]){const step=mo.step||2;
  e=Array.from(e,x=>x||0);const m=avg(e),sd=Math.sqrt(avg(e.map(x=>(x-m)**2)))||1,r=[];
@@ -148,7 +171,7 @@ async function clipAudio(c){
  initAudio();await ctx.resume();const parts=[],sp=ctx.createScriptProcessor(4096,1,1);
  sp.onaudioprocess=e=>parts.push(new Float32Array(e.inputBuffer.getChannelData(0)));
  v.pause();v.muted=false;v.playbackRate=1;
- if(Math.abs(v.currentTime-c.start)>.05){v.currentTime=c.start;await new Promise(r=>v.onseeked=r)}
+ if(Math.abs(v.currentTime-c.start)>.05){await seekTo(c.start)}
  srcN.connect(sp);sp.connect(muteN);await v.play();
  await new Promise(r=>{const t=setInterval(()=>{say('Listening to the clip… '+Math.max(0,Math.ceil(c.end-v.currentTime))+'s left. Keep this screen open.');if(v.currentTime>=c.end||v.ended||v.paused){clearInterval(t);r()}},200)});
  v.pause();srcN.disconnect(sp);sp.disconnect();
@@ -216,7 +239,7 @@ async function exp0(c,label,tag){
  const st=cv.captureStream(30);dest.stream.getAudioTracks().forEach(t=>st.addTrack(t));
  const mt=['video/mp4;codecs=avc1','video/mp4','video/webm;codecs=vp9,opus','video/webm'].find(t=>MediaRecorder.isTypeSupported(t))||'';
  const rec=window.rec0=new MediaRecorder(st,mt?{mimeType:mt}:{}),ch=[];rec.ondataavailable=e=>e.data.size&&ch.push(e.data);
- v.pause();if(Math.abs(v.currentTime-c.start)>.05){v.currentTime=c.start;await new Promise(r=>v.onseeked=r)}
+ v.pause();if(Math.abs(v.currentTime-c.start)>.05){await seekTo(c.start)}
  const vw=v.videoWidth,vh=v.videoHeight,sw=Math.min(vw,vh*9/16),sh=sw*16/9,sy=(vh-sh)/2,blur=$('#lay').value==='blur',sx=(vw-sw)*(blur?.5:+$('#pan').value);
  const fit=Math.min(W/vw,H/vh),fw=vw*fit,fh=vh*fit;
  const T=$('#sub').value==='1'?tl(c):[],cs=S[$('#cs').value],n=+$('#cn').value,hk=(c.hook||'').trim().split(/\s+/).filter(Boolean);
