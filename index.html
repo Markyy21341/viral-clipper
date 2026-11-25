@@ -51,6 +51,7 @@ video{width:100%;max-height:34vh;background:#000;border-radius:14px;display:bloc
 .pb{flex:1 1 100%;height:6px;border-radius:3px;background:var(--chip);overflow:hidden;order:3}
 .pb i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--a),var(--a2));transition:width .3s}
 #cancel{padding:7px 12px;font-size:13px}
+.why{font-size:13px;color:var(--mut);margin:0 0 8px}.ait{background:var(--chip);border-radius:12px;padding:10px;margin:8px 0;font-size:14px}.ait button{margin-top:6px;padding:6px 10px;font-size:13px}#aiest{display:block;margin-top:8px}details .acts{margin-top:8px}
 canvas{display:none}footer{text-align:center;color:var(--mut);font-size:12px;margin-top:24px}
 details summary{font-size:14px;color:var(--mut)}details p{font-size:13px;color:var(--mut);margin:8px 0 0}
 </style></head><body>
@@ -69,16 +70,30 @@ details summary{font-size:14px;color:var(--mut)}details p{font-size:13px;color:v
  <label class="sw"><input id="mot" type="checkbox"> Also detect motion (experimental, slower)</label>
  <button id="gen" class="cta">✨ Generate best short</button>
 </section>
+<section id="aic" class="card" hidden>
+ <h2>✨ AI judge (Gemini, free key)</h2>
+ <details id="aiset"><summary>Key and model</summary>
+  <div class="f"><label>Gemini API key (stays on your phone)</label><input id="gkey" type="password" placeholder="Paste your key from Google AI Studio" autocomplete="off"></div>
+  <div class="f"><label>Model</label><select id="gmod"><option value="">Tap Test key to load models</option></select></div>
+  <div class="acts"><button id="gtest">Test key</button><button id="gclear">Remove key</button></div>
+  <p class="muted" style="margin-top:8px">Only short audio pieces are sent to Google, never the whole video. Free tiers can have weaker privacy terms, so check Google’s terms.</p>
+ </details>
+ <div class="f"><label>Scan type</label><div class="seg" id="aim"><button data-v="smart" class="on">Smart (top moments)</button><button data-v="deep">Deep (everything)</button></div></div>
+ <div class="f" id="ainf"><label>AI checks the top (pieces)</label><div class="step"><button data-st="-2">−</button><input id="ain" type="number" min="1" max="40" value="12" inputmode="numeric"><button data-st="2">+</button></div></div>
+ <label class="sw"><input id="aitrim" type="checkbox" checked> Let AI adjust start and end</label>
+ <button id="aigo" class="cta">✨ Find best moments with AI</button>
+ <small id="aiest"></small>
+</section>
 <div id="list"></div><div id="out"></div>
 <div id="bar" hidden><div id="msg"></div><button id="cancel" hidden>Cancel</button><div class="pb"><i id="pbi"></i></div></div>
 <canvas id="cv"></canvas>
-<footer>v8 · everything stays on your phone</footer>
+<footer>v9 · audio only leaves your phone when you use the AI judge</footer>
 <script>
 const $=s=>document.querySelector(s),v=$('#v');
 const esc=t=>String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
 const fm=t=>Math.floor(t/60)+':'+String(Math.floor(t%60)).padStart(2,'0');
 const avg=a=>a.reduce((x,y)=>x+y,0)/(a.length||1);
-let sc=[],dur=0,url,G=[],busy=false,cancel=false,working=false,ctx,srcN,dest,an,muteN,lastUi=0,wl;
+let AB=null,sc=[],dur=0,url,G=[],busy=false,cancel=false,working=false,ctx,srcN,dest,an,muteN,lastUi=0,wl;
 function say(t,p){const b=$('#bar');if(!t){b.hidden=true;return}const n=performance.now();if(p!=null&&n-lastUi<250)return;lastUi=n;b.hidden=false;$('#msg').textContent=t;$('#pbi').style.width=p==null?'0%':Math.round(p*100)+'%';$('#cancel').hidden=!working}
 async function wake(on){try{if(on)wl=await navigator.wakeLock.request('screen');else{wl&&wl.release();wl=null}}catch(e){}}
 function work(on){working=on;$('#cancel').hidden=!on;wake(on)}
@@ -87,11 +102,11 @@ $('#bar').onclick=e=>{if(!working&&e.target.id!=='cancel')say('')};
 /* settings */
 const seg=id=>$('#'+id+' .on').dataset.v;
 const RN={720:'Fast and light. Best for most phones.',1080:'HD. Sharper, but needs a stronger phone.',2160:'4K. Large files and may look choppy on phones.',4320:'8K. Usually fails on phones; the app steps down automatically.'};
-function ui(){$('#cntf').hidden=seg('mode')!=='best';$('#panf').hidden=seg('lay')!=='crop';$('#resn').textContent=RN[seg('res')]}
-function save(){try{const o={s:{},mot:$('#mot').checked};['len','cnt','pan'].forEach(k=>o[k]=$('#'+k).value);['mode','lay','res'].forEach(k=>o.s[k]=seg(k));localStorage.setItem('vc2',JSON.stringify(o))}catch(e){}}
-function load(){try{const o=JSON.parse(localStorage.getItem('vc2')||'{}');['len','cnt','pan'].forEach(k=>{if(o[k])$('#'+k).value=o[k]});$('#mot').checked=!!o.mot;Object.entries(o.s||{}).forEach(([k,val])=>{const b=$('#'+k+' [data-v="'+val+'"]');if(b)$('#'+k).querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b))})}catch(e){}}
+function ui(){$('#ainf').hidden=seg('aim')!=='smart';$('#cntf').hidden=seg('mode')!=='best';$('#panf').hidden=seg('lay')!=='crop';$('#resn').textContent=RN[seg('res')]}
+function save(){try{const o={s:{},mot:$('#mot').checked};['len','cnt','pan','ain'].forEach(k=>o[k]=$('#'+k).value);['mode','lay','res','aim'].forEach(k=>o.s[k]=seg(k));localStorage.setItem('vc2',JSON.stringify(o))}catch(e){}}
+function load(){try{const o=JSON.parse(localStorage.getItem('vc2')||'{}');['len','cnt','pan','ain'].forEach(k=>{if(o[k])$('#'+k).value=o[k]});$('#mot').checked=!!o.mot;Object.entries(o.s||{}).forEach(([k,val])=>{const b=$('#'+k+' [data-v="'+val+'"]');if(b)$('#'+k).querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b))})}catch(e){}}
 document.querySelectorAll('.seg').forEach(s=>s.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;s.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));ui();save();if(s.id==='mode')repick()}));
-document.querySelectorAll('[data-st]').forEach(b=>b.onclick=()=>{const i=b.parentNode.querySelector('input'),mn=+i.min||1,mx=+i.max||99999;i.value=Math.max(mn,Math.min(mx,(+i.value||mn)+ +b.dataset.st));save();repick()});
+document.querySelectorAll('[data-st]').forEach(b=>b.onclick=()=>{const i=b.parentNode.querySelector('input'),mn=+i.min||1,mx=+i.max||99999;i.value=Math.max(mn,Math.min(mx,(+i.value||mn)+ +b.dataset.st));save();if(i.id==='len'||i.id==='cnt')repick();aiEst()});
 ['len','cnt'].forEach(k=>$('#'+k).onchange=()=>{save();repick()});$('#pan').onchange=save;$('#mot').onchange=save;
 const repick=()=>{if(dur&&!working)pick()};
 /* analysis */
@@ -100,9 +115,9 @@ $('#f').onchange=async e=>{
  if(working){say('Wait for the current task to finish.');return}
  url&&URL.revokeObjectURL(url);url=URL.createObjectURL(f);v.src=url;
  $('#vcard').hidden=false;$('#vname').textContent=f.name+' · '+Math.round(f.size/1e6)+' MB';
- $('#sets').hidden=true;$('#list').innerHTML='';$('#out').innerHTML='';G=[];sc=[];dur=0;busy=false;cancel=false;
+ $('#sets').hidden=true;$('#aic').hidden=true;$('#list').innerHTML='';$('#out').innerHTML='';G=[];sc=[];dur=0;AB=null;busy=false;cancel=false;
  work(true);say('Analyzing audio…',0);
- try{const en=await getEnergy(f),mo=$('#mot').checked?await motion():[];if(cancel)throw new Error('cancelled');score(en,mo);$('#sets').hidden=false;pick();say('');$('#sets').scrollIntoView({behavior:'smooth'})}
+ try{const en=await getEnergy(f),mo=$('#mot').checked?await motion():[];if(cancel)throw new Error('cancelled');score(en,mo);$('#sets').hidden=false;$('#aic').hidden=false;pick();say('');$('#sets').scrollIntoView({behavior:'smooth'})}
  catch(x){say(cancel?'Cancelled.':'Couldn’t analyze this video. Try a different file or a shorter one.')}
  finally{work(false);e.target.value=''}
 };
@@ -114,7 +129,7 @@ async function getEnergy(f){
 async function decode(f){
  const ac=new(window.AudioContext||window.webkitAudioContext)();
  const a=await ac.decodeAudioData(await f.arrayBuffer());ac.close();
- dur=a.duration;const d=a.getChannelData(0),w=Math.floor(a.sampleRate*.5),n=Math.floor(d.length/w),e=[];
+ AB=a;dur=a.duration;const d=a.getChannelData(0),w=Math.floor(a.sampleRate*.5),n=Math.floor(d.length/w),e=[];
  for(let i=0;i<n;i++){let s=0,c=0;for(let j=i*w;j<(i+1)*w;j+=8){s+=d[j]*d[j];c++}e.push(Math.sqrt(s/c))}
  return e;
 }
@@ -193,23 +208,132 @@ function pick(){
 }
 const PW=/\b(never|secret|insane|crazy|wait|stop|mistake|truth|nobody|everyone|worst|best|free|shocking|unbelievable|wrong|why|how)\b/i;
 function hookScore(t,g){const w=t.trim().split(/\s+/).filter(Boolean).length;let p=38+(g.score||5)*2.5;if(/\?|^(why|how|what|did|do|can|is|are|wait)\b/i.test(t))p+=9;if(PW.test(t))p+=8;if(/\d/.test(t))p+=7;if(w>=3&&w<=8)p+=8;else if(w>12||w<2)p-=12;return Math.max(15,Math.min(97,Math.round(p)))}
-function hookOpts(g){const hs=['Wait for the end…','You won’t believe what happens','This is insane','Nobody talks about this','Stop scrolling, watch this','This changes everything'].map(t=>({t,p:hookScore(t,g)})).sort((a,b)=>b.p-a.p);g.hs=hs;
+function hookOpts(g){const hs=(g.ah&&g.ah.length)?g.ah:['Wait for the end…','You won’t believe what happens','This is insane','Nobody talks about this','Stop scrolling, watch this','This changes everything'].map(t=>({t,p:hookScore(t,g)})).sort((a,b)=>b.p-a.p);g.hs=hs;
  return '<option value="-1">Pick a hook idea (% = estimated strength)</option><option value="-2">No hook</option>'+hs.map((h,i)=>'<option value="'+i+'">'+h.p+'% · '+esc(h.t)+'</option>').join('')}
-function card(g,i){return '<article class="clip"><div class="ch"><span class="rk">'+(i+1)+'</span><div><b>'+fm(g.start)+' – '+fm(g.end)+'</b><br><small>'+Math.round(g.end-g.start)+' seconds</small></div><span class="hype">🔥 '+g.score+'/10</span></div><div class="meter"><i style="width:'+g.score*10+'%"></i></div>'
+function card(g,i){return '<article class="clip"><div class="ch"><span class="rk">'+(i+1)+'</span><div><b>'+fm(g.start)+' – '+fm(g.end)+'</b><br><small>'+Math.round(g.end-g.start)+' seconds</small></div><span class="hype">'+(g.ai?'✨ AI ':'🔥 ')+g.score+'/10</span></div><div class="meter"><i style="width:'+g.score*10+'%"></i></div>'+(g.why?'<p class="why">'+esc(g.why)+'</p>':'')
  +'<div class="trim"><span>Start</span><button data-a="'+i+',start,-1">−1s</button><button data-a="'+i+',start,1">+1s</button><span>End</span><button data-a="'+i+',end,-1">−1s</button><button data-a="'+i+',end,1">+1s</button></div>'
- +'<select data-h="'+i+'">'+hookOpts(g)+'</select><div class="hk"><input data-hi="'+i+'" value="'+esc(g.hook||'')+'" placeholder="Hook text on screen for 3 seconds (optional)"><b id="hp'+i+'" class="pill">'+(g.hook?hookScore(g.hook,g)+'%':'')+'</b></div>'
- +'<div class="acts"><button data-p="'+i+'">▶ Preview</button><button class="pri" data-x="'+i+'">⬇ Export</button></div></article>'}
-function render(){
+ +'<select data-h="'+i+'">'+hookOpts(g)+'</select><div class="hk"><input data-hi="'+i+'" value="'+esc(g.hook||'')+'" placeholder="Hook text on screen for 3 seconds (optional)"><b id="hp'+i+'" class="pill">'+(g.hook?hpf(g.hook,g)+'%':'')+'</b></div>'
+ +(g.title?'<div class="ait"><b>'+esc(g.title)+'</b><br><small>'+esc((g.tags||[]).map(t=>'#'+t).join(' '))+'</small><br><button data-c="'+i+'">Copy title + tags</button></div>':'')+'<div class="acts"><button data-p="'+i+'">▶ Preview</button><button data-ai="'+i+'">✨ AI</button><button class="pri" data-x="'+i+'">⬇ Export</button></div></article>'}
+function render(){aiEst();
  $('#list').innerHTML=G.length?'<button id="all" class="cta">Export all '+G.length+' clip'+(G.length>1?'s':'')+'</button>'+G.map(card).join(''):'';
  document.querySelectorAll('[data-a]').forEach(b=>b.onclick=()=>{const[i,f,d]=b.dataset.a.split(','),g=G[i],o=g[f];g[f]=Math.max(0,Math.min(dur,o+ +d));if(g.end-g.start<1)g[f]=o;render()});
  document.querySelectorAll('[data-h]').forEach(x=>x.onchange=()=>{const g=G[x.dataset.h],k=+x.value;if(k>=0)g.hook=g.hs[k].t;else if(k===-2)g.hook='';render()});
- document.querySelectorAll('[data-hi]').forEach(t=>t.oninput=()=>{const g=G[t.dataset.hi];g.hook=t.value;$('#hp'+t.dataset.hi).textContent=t.value.trim()?hookScore(t.value,g)+'%':''});
+ document.querySelectorAll('[data-hi]').forEach(t=>t.oninput=()=>{const g=G[t.dataset.hi];g.hook=t.value;$('#hp'+t.dataset.hi).textContent=t.value.trim()?hpf(t.value,g)+'%':''});
  document.querySelectorAll('[data-p]').forEach(b=>b.onclick=()=>preview(G[b.dataset.p]));
  document.querySelectorAll('[data-x]').forEach(b=>b.onclick=()=>exp(G[b.dataset.x],'Clip #'+(+b.dataset.x+1)));
+ document.querySelectorAll('[data-ai]').forEach(b=>b.onclick=()=>aiOne(G[b.dataset.ai]));
+ document.querySelectorAll('[data-c]').forEach(b=>b.onclick=()=>{const g=G[b.dataset.c];navigator.clipboard.writeText((g.title||'')+'\n'+(g.tags||[]).map(x=>'#'+x).join(' ')).then(()=>say('Copied ✓'),()=>say('Could not copy.'));setTimeout(()=>{if(!working)say('')},1800)});
  const al=$('#all');if(al)al.onclick=async()=>{for(let i=0;i<G.length;i++){if(!await exp(G[i],'Clip #'+(i+1),(i+1)+'/'+G.length))break}};
 }
 $('#gen').onclick=()=>{const b=G.reduce((m,g)=>!m||g.s>m.s?g:m,null);b?exp(b,'Viral short'):say('Choose a video first.')};
 function preview(c){if(working)return;v.currentTime=c.start;v.play();v.ontimeupdate=()=>{if(v.currentTime>=c.end){v.pause();v.ontimeupdate=null}};$('#vcard').scrollIntoView({behavior:'smooth'})}
+/* AI judge (Gemini) */
+const GK='https://generativelanguage.googleapis.com/v1beta/';
+const gkey=()=>$('#gkey').value.trim();
+const hpf=(t,g)=>{const h=(g.ah||[]).find(x=>x.t===t.trim());return h?h.p:hookScore(t,g)};
+async function r16(ab,off,d){const oc=new OfflineAudioContext(1,Math.max(1,Math.round(d*16000)),16000),s=oc.createBufferSource();s.buffer=ab;s.connect(oc.destination);s.start(0,off,d);return (await oc.startRendering()).getChannelData(0)}
+function wav(f){const n=f.length,b=new ArrayBuffer(44+n*2),d=new DataView(b),w=(o,s)=>{for(let i=0;i<s.length;i++)d.setUint8(o+i,s.charCodeAt(i))};
+ w(0,'RIFF');d.setUint32(4,36+n*2,true);w(8,'WAVE');w(12,'fmt ');d.setUint32(16,16,true);d.setUint16(20,1,true);d.setUint16(22,1,true);d.setUint32(24,16000,true);d.setUint32(28,32000,true);d.setUint16(32,2,true);d.setUint16(34,16,true);w(36,'data');d.setUint32(40,n*2,true);
+ for(let i=0;i<n;i++){const x=Math.max(-1,Math.min(1,f[i]));d.setInt16(44+i*2,x<0?x*32768:x*32767,true)}return b}
+const b64=buf=>new Promise(r=>{const fr=new FileReader();fr.onload=()=>r(fr.result.split(',')[1]);fr.readAsDataURL(new Blob([buf]))});
+async function grabAudio(s,e){
+ if(AB)return r16(AB,s,e-s);
+ const au=new Audio();au.preload='auto';au.src=url;
+ await new Promise((r,j)=>{au.onloadedmetadata=r;au.onerror=()=>j(new Error('audio'));setTimeout(()=>j(new Error('audio timeout')),10000)});
+ await new Promise(r=>{let d=false;const f=()=>{if(!d){d=true;r()}};au.onseeked=f;setTimeout(f,2500);au.currentTime=s});
+ const ac=new(window.AudioContext||window.webkitAudioContext)(),src=ac.createMediaElementSource(au),sp=ac.createScriptProcessor(4096,1,1),m=ac.createGain(),parts=[];
+ m.gain.value=0;sp.onaudioprocess=ev=>parts.push(new Float32Array(ev.inputBuffer.getChannelData(0)));src.connect(sp);sp.connect(m);m.connect(ac.destination);await ac.resume();
+ try{await au.play();await new Promise((res,rej)=>{let lt=-1,ls=Date.now();const t=setInterval(()=>{
+  if(cancel){clearInterval(t);rej(new Error('cancelled'));return}
+  if(au.currentTime>=e||au.ended){clearInterval(t);res();return}
+  if(au.paused)au.play().catch(()=>{});
+  if(au.currentTime!==lt){lt=au.currentTime;ls=Date.now()}else if(Date.now()-ls>10000){clearInterval(t);rej(new Error('audio stalled'));return}
+ },200)})}finally{au.pause();au.removeAttribute('src');au.load();sp.disconnect()}
+ const n0=parts.reduce((a,p)=>a+p.length,0),all=new Float32Array(n0);let o=0;parts.forEach(p=>{all.set(p,o);o+=p.length});
+ const n=Math.max(1,Math.min(n0,Math.round((e-s)*ac.sampleRate))),ab=ac.createBuffer(1,n,ac.sampleRate);ab.copyToChannel(all.subarray(0,n),0);
+ const out=await r16(ab,0,n/ac.sampleRate);ac.close();return out;
+}
+const SCHEMA='Return ONLY JSON: an array with one object per piece, in order: {"id":number,"score":integer 1-10 for viral potential as a short-form video,"reason":"max 12 words","said":"one sentence on what is said","trim":[startSec,endSec] relative to the piece start, cutting to the best complete moment of at least 5 seconds, or null,"title":"max 8 words","tags":["5 hashtags without the # sign"],"hooks":[{"t":"on-screen hook text, max 7 words","p":integer 0-100 estimated strength}] with 5 items}. Judge hook, emotion, humor, surprise, clear claims, and whether the piece works on its own. If a piece has no speech, judge the sounds and score it low unless they are exciting.';
+async function loadModels(){
+ const k=gkey();if(!k)throw new Error('Paste your Gemini key first (open “Key and model”).');
+ const r=await fetch(GK+'models?pageSize=200&key='+encodeURIComponent(k)),j=await r.json().catch(()=>({}));
+ if(!r.ok)throw new Error((j.error&&j.error.message)||('HTTP '+r.status));
+ const ver=n=>parseFloat((n.match(/(\d+(?:\.\d+)?)/)||[0,0])[1]);
+ const ms=(j.models||[]).filter(m=>(m.supportedGenerationMethods||[]).includes('generateContent')&&/flash/i.test(m.name)&&!/image|tts|live|audio|embed|exp|robotics|computer|learnlm/i.test(m.name)).map(m=>m.name.replace('models/','')).sort((a,b)=>(/preview/.test(a)-/preview/.test(b))||(/lite/.test(a)-/lite/.test(b))||ver(b)-ver(a));
+ if(!ms.length)throw new Error('no usable models found for this key');
+ const sel=$('#gmod'),old=localStorage.getItem('gm');sel.innerHTML=ms.map(m=>'<option>'+esc(m)+'</option>').join('');if(old&&ms.includes(old))sel.value=old;
+ localStorage.setItem('gk',k);localStorage.setItem('gm',sel.value);return ms.length;
+}
+async function gem(parts){
+ if(!$('#gmod').value)await loadModels();
+ const r=await fetch(GK+'models/'+$('#gmod').value+':generateContent?key='+encodeURIComponent(gkey()),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({contents:[{parts}],generationConfig:{responseMimeType:'application/json',temperature:.4}})});
+ const j=await r.json().catch(()=>({}));
+ if(!r.ok){const m=(j.error&&j.error.message)||('HTTP '+r.status);throw new Error(r.status===429?'Free limit reached for now. Wait a while, or pick a lite model.':m+((r.status===404||r.status===403)?' Try another model under Key and model.':''))}
+ const ps=(((j.candidates||[])[0]||{}).content||{}).parts||[],txt=ps.map(p=>p.text||'').join('').replace(/```json|```/g,'').trim(),o=JSON.parse(txt);
+ return Array.isArray(o)?o:(Object.values(o).find(Array.isArray)||[]);
+}
+function applyAI(g,o){
+ g.ai=Math.max(1,Math.min(10,Math.round(+o.score||5)));g.why=String(o.reason||'');g.title=String(o.title||'');
+ g.tags=(o.tags||[]).map(t=>String(t).replace(/^#/,'').replace(/\s+/g,'')).filter(Boolean).slice(0,6);
+ g.ah=(o.hooks||[]).map(h=>({t:String(h.t||h).trim(),p:Math.max(1,Math.min(99,Math.round(+h.p||60)))})).filter(h=>h.t).sort((a,b)=>b.p-a.p).slice(0,6);
+ if($('#aitrim').checked&&Array.isArray(o.trim)&&o.trim.length===2){const a=+o.trim[0],b=+o.trim[1],d=g.end-g.start,s0=g.start;if(isFinite(a)&&isFinite(b)&&b-a>=5&&a>=0&&b<=d+.5){g.start=Math.max(0,s0+a);g.end=Math.min(dur,s0+b)}}
+ g.score=g.ai;if(!g.hook&&g.ah[0])g.hook=g.ah[0].t;
+}
+async function judge(items){
+ const batches=[];let cur=[],secs=0;
+ items.forEach(g=>{const d=g.end-g.start;if(cur.length&&secs+d>240){batches.push(cur);cur=[];secs=0}cur.push(g);secs+=d});if(cur.length)batches.push(cur);
+ let done=0;
+ for(let bi=0;bi<batches.length;bi++){
+  const b=batches[bi],parts=[{text:'You judge pieces of a long video for short-form platforms such as TikTok, Shorts and Reels. Each piece below is separate audio. '+SCHEMA}];
+  for(let i=0;i<b.length;i++){
+   if(cancel)throw new Error('cancelled');
+   say('Listening to piece '+(done+i+1)+' of '+items.length+'…',(done+i)/items.length);
+   const f=await grabAudio(b[i].start,b[i].end);
+   parts.push({text:'PIECE id='+i+' ('+Math.round(b[i].end-b[i].start)+' seconds):'});parts.push({inline_data:{mime_type:'audio/wav',data:await b64(wav(f))}});
+  }
+  say('Asking Gemini… ('+(bi+1)+' of '+batches.length+')',done/items.length);
+  const arr=await gem(parts);
+  b.forEach((g,i)=>{const o=arr.find(x=>+x.id===i)||arr[i];if(o)applyAI(g,o)});
+  done+=b.length;if(bi<batches.length-1)await new Promise(r=>setTimeout(r,3000));
+ }
+}
+async function aiOne(g){
+ if(busy||working){say('Still working. Wait for the current task to finish.');return}
+ busy=true;cancel=false;work(true);
+ try{await judge([g]);render();say('AI result ready ✓')}catch(x){say(cancel?'Cancelled.':'AI: '+(x.message||'error'))}
+ finally{busy=false;work(false)}
+}
+function aiEst(){
+ if(!dur){$('#aiest').textContent='';return}
+ const L=Math.max(1,Math.min(+$('#len').value||20,dur)),n=seg('aim')==='deep'?Math.min(100,Math.ceil(dur/L)):Math.min(40,+$('#ain').value||12),secs=n*L;
+ $('#aiest').textContent='About '+n+' pieces · '+(secs/60).toFixed(1)+' min of audio · '+(secs*.032).toFixed(1)+' MB sent'+(AB?'':' · big file: collecting audio takes about '+Math.ceil(secs/60)+' min');
+}
+$('#gtest').onclick=async()=>{
+ say('Testing key…');
+ try{const n=await loadModels();say('Key works ✓ · '+n+' models found. Pick one in the list.')}catch(x){say('Key test failed: '+(x.message||'error'))}
+ setTimeout(()=>{if(!working)say('')},4000);
+};
+$('#gclear').onclick=()=>{try{localStorage.removeItem('gk')}catch(e){}$('#gkey').value='';say('Key removed from this phone.');setTimeout(()=>{if(!working)say('')},2500)};
+$('#gmod').onchange=()=>{try{localStorage.setItem('gm',$('#gmod').value)}catch(e){}};
+$('#gkey').onchange=()=>{try{localStorage.setItem('gk',gkey())}catch(e){}};
+$('#ain').onchange=()=>{save();aiEst()};
+$('#aigo').onclick=async()=>{
+ if(busy||working){say('Still working. Wait for the current task to finish.');return}
+ if(!dur||!sc.length){say('Choose a video first.');return}
+ busy=true;cancel=false;work(true);
+ const deep=seg('aim')==='deep',L=Math.max(1,Math.min(+$('#len').value||20,dur));let items=[],err=null;
+ if(deep){for(let a=0;a<dur-.5&&items.length<100;a+=L)items.push({start:a,end:Math.min(dur,a+L),s:0})}
+ else{const N=Math.max(1,Math.min(40,+$('#ain').value||12)),idx=sc.map((x,i)=>i).sort((a,b)=>sc[b]-sc[a]);
+  for(const i of idx){const t=i*.5;if(items.every(g=>Math.abs(g.t-t)>=L))items.push({t,s:sc[i]});if(items.length>=N)break}
+  items.forEach(g=>{g.start=Math.max(0,Math.min(g.t-L*.4,dur-L));g.end=Math.min(dur,g.start+L)})}
+ const mx=Math.max(...items.map(g=>g.s)),mn=Math.min(...items.map(g=>g.s));items.forEach(g=>g.score=1+Math.round(9*(g.s-mn)/((mx-mn)||1)));
+ try{await judge(items)}catch(x){err=x}
+ const ok=items.filter(g=>g.ai).sort((a,b)=>b.ai-a.ai||b.s-a.s);
+ if(ok.length){G=deep?ok.slice(0,15):ok;render()}
+ say(err?(cancel?'Cancelled.':'AI stopped: '+(err.message||'error'))+(ok.length?' Showing the '+ok.length+' clips judged so far.':''):'AI ranked '+ok.length+' clips ✓');
+ busy=false;work(false);
+ if(!err)setTimeout(()=>{if(!working)say('')},3000);
+};
 /* export */
 function drawHook(g,W,H,words){
  const size=Math.round(W*.075);g.font='900 '+size+'px system-ui,Arial,sans-serif';g.textBaseline='middle';g.textAlign='left';
@@ -280,6 +404,7 @@ function addResult(b,label){
  d.querySelector('button').onclick=()=>{const fl=new File([b],name,{type:b.type});if(navigator.canShare&&navigator.canShare({files:[fl]}))navigator.share({files:[fl]}).catch(()=>{});else say('Use Download, or press and hold the video to save it.')};
  $('#out').appendChild(d);d.scrollIntoView({behavior:'smooth',block:'center'});
 }
+try{$('#gkey').value=localStorage.getItem('gk')||'';const gm=localStorage.getItem('gm');if(gm)$('#gmod').innerHTML='<option>'+esc(gm)+'</option>'}catch(e){}
 load();ui();
 if('serviceWorker' in navigator)addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
 </script></body></html>
